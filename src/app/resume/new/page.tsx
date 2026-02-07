@@ -7,7 +7,6 @@ import { supabase } from '~/lib/supabase'
 export default function NewResume() {
   const router = useRouter()
   
-  // Store all the form data
   const [formData, setFormData] = useState({
     title: '',
     full_name: '',
@@ -44,12 +43,10 @@ export default function NewResume() {
     ]
   })
 
-  // Update form when user types
   const handleChange = (field: string, value: any) => {
     setFormData({ ...formData, [field]: value })
   }
 
-  // Add another work experience
   const addExperience = () => {
     setFormData({
       ...formData,
@@ -60,7 +57,6 @@ export default function NewResume() {
     })
   }
 
-  // Add another education
   const addEducation = () => {
     setFormData({
       ...formData,
@@ -71,7 +67,6 @@ export default function NewResume() {
     })
   }
 
-  // Add another skill
   const addSkill = () => {
     setFormData({
       ...formData,
@@ -79,7 +74,6 @@ export default function NewResume() {
     })
   }
 
-  // Save to database
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -109,7 +103,6 @@ export default function NewResume() {
         <h1 className="text-3xl font-bold mb-8">Create New Resume</h1>
         
         <form onSubmit={handleSubmit} className="space-y-8">
-          {/* Resume Title */}
           <div>
             <label className="block mb-2 font-semibold">Resume Title</label>
             <input
@@ -122,7 +115,6 @@ export default function NewResume() {
             />
           </div>
 
-          {/* Personal Information */}
           <div className="border-t pt-6">
             <h2 className="text-2xl font-bold mb-4">Personal Information</h2>
             
@@ -135,6 +127,7 @@ export default function NewResume() {
                   onChange={(e) => handleChange('full_name', e.target.value)}
                   className="w-full p-2 border rounded"
                   required
+                  placeholder='e.g., John Doe'
                 />
               </div>
               
@@ -146,6 +139,7 @@ export default function NewResume() {
                   onChange={(e) => handleChange('email', e.target.value)}
                   className="w-full p-2 border rounded"
                   required
+                  placeholder='e.g., 6oM6A@example.com'
                 />
               </div>
               
@@ -156,7 +150,8 @@ export default function NewResume() {
                   value={formData.phone}
                   onChange={(e) => handleChange('phone', e.target.value)}
                   className="w-full p-2 border rounded"
-                />
+                  placeholder='e.g., (123) 456-7890'
+                 />
               </div>
               
               <div>
@@ -166,12 +161,12 @@ export default function NewResume() {
                   value={formData.address}
                   onChange={(e) => handleChange('address', e.target.value)}
                   className="w-full p-2 border rounded"
+                  placeholder='e.g., 123 Main Street, City, State'
                 />
               </div>
             </div>
           </div>
 
-          {/* Professional Summary */}
           <div className="border-t pt-6">
             <h2 className="text-2xl font-bold mb-4">Professional Summary</h2>
             <textarea
@@ -182,7 +177,6 @@ export default function NewResume() {
             />
           </div>
 
-          {/* Work Experience */}
           <div className="border-t pt-6">
             <h2 className="text-2xl font-bold mb-4">Work Experience</h2>
             {formData.experience.map((exp, index) => (
@@ -201,6 +195,7 @@ export default function NewResume() {
                         handleChange('experience', newExp)
                       }}
                       className="w-full p-2 border rounded"
+                      placeholder="e.g., Google"
                     />
                   </div>
                   
@@ -217,6 +212,7 @@ export default function NewResume() {
                         handleChange('experience', newExp)
                       }}
                       className="w-full p-2 border rounded"
+                      placeholder="e.g., Software Engineer"
                     />
                   </div>
                   
@@ -233,6 +229,7 @@ export default function NewResume() {
                         handleChange('experience', newExp)
                       }}
                       className="w-full p-2 border rounded"
+                      placeholder="e.g., 2020-01"
                     />
                   </div>
                   
@@ -249,6 +246,7 @@ export default function NewResume() {
                         handleChange('experience', newExp)
                       }}
                       className="w-full p-2 border rounded"
+                      placeholder="Present"
                     />
                   </div>
                 </div>
@@ -265,6 +263,7 @@ export default function NewResume() {
                       handleChange('experience', newExp)
                     }}
                     className="w-full p-2 border rounded h-24"
+                    placeholder="Describe your responsibilities and achievements..."
                   />
                 </div>
               </div>
@@ -279,7 +278,6 @@ export default function NewResume() {
             </button>
           </div>
 
-          {/* Submit Button */}
           <div className="flex gap-4">
             <button
               type="submit"

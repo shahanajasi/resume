@@ -6,7 +6,6 @@ import { supabase } from '~/lib/supabase'
 export default function LoginPage() {
   const router = useRouter()
 
-  // This function runs when someone clicks "Login with Google"
   const handleGoogleLogin = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',

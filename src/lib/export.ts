@@ -3,74 +3,268 @@ import jsPDF from 'jspdf'
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, BorderStyle } from 'docx'
 import { saveAs } from 'file-saver'
 
-// ============================================
-// PDF DOWNLOAD
-// ============================================
-export async function downloadAsPDF(element: HTMLElement, fileName: string) {
-  try {
-    // Convert HTML to canvas
-    const canvas = await html2canvas(element, {
-      scale: 2, // Higher quality
-      useCORS: true,
-      logging: false,
-    })
+interface ExportError {
+  message: string
+  code: string
+  details?: unknown
+}
 
-    // Calculate dimensions for A4 page
-    const imgWidth = 210 // A4 width in mm
-    const pageHeight = 297 // A4 height in mm
-    const imgHeight = (canvas.height * imgWidth) / canvas.width
-    
-    // Create PDF
-    const pdf = new jsPDF('p', 'mm', 'a4')
-    let heightLeft = imgHeight
-    let position = 0
+type ExportResult<T = void> = {
+  success: boolean
+  error?: ExportError
+  data?: T
+}
 
-    // Add first page
-    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, position, imgWidth, imgHeight)
-    heightLeft -= pageHeight
-
-    // Add additional pages if content is long
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight
-      pdf.addPage()
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, position, imgWidth, imgHeight)
-      heightLeft -= pageHeight
-    }
-
-    // Download
-    pdf.save(`${fileName}_Resume.pdf`)
-  } catch (error) {
-    console.error('Error generating PDF:', error)
-    alert('Failed to generate PDF')
+function ensureBrowser(): void {
+  if (typeof window === 'undefined') {
+    throw new Error('This function must be called in a browser environment')
   }
 }
 
-// ============================================
-// DOCX DOWNLOAD
-// ============================================
-export async function downloadAsDocx(resumeData: any) {
-  try {
-    const sections: any[] = []
+const formatDate = (dateStr: string): string => {
+  if (!dateStr) return 'Present'
+  const [year, month] = dateStr.split('-')
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const monthIndex = parseInt(month || '1') - 1
+  return `${monthNames[monthIndex] || 'Jan'} ${year}`
+}
 
-    // Helper function to format dates
-    const formatDate = (dateStr: string) => {
-      if (!dateStr) return 'Present'
-      const [year, month] = dateStr.split('-')
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-      return `${monthNames[parseInt(month || '1') - 1]} ${year}`
+
+const sanitizeFileName = (name: string): string => {
+  return name
+    .replace(/[^a-z0-9]/gi, '_')
+    .replace(/_+/g, '_')
+    .toLowerCase()
+}
+
+function colorToRGB(color: string): string {
+  const unsupportedRegex = /(lab|lch|oklab|oklch)\(/i;
+  if (!unsupportedRegex.test(color)) {
+    return color;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = 1;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return color;
+  }
+
+  ctx.clearRect(0, 0, 1, 1);
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 1, 1);
+  const [r, g, b, a = 255] = ctx.getImageData(0, 0, 1, 1).data;
+
+  if (a === 0) {
+    return 'transparent';
+  }
+
+  return `rgba(${r}, ${g}, ${b}, ${a / 255})`;
+}
+
+function fixUnsupportedColors(original: HTMLElement, clone: HTMLElement): void {
+  const style = window.getComputedStyle(original);
+
+  const singleColorProps = [
+    'color',
+    'background-color',
+    'border-top-color',
+    'border-right-color',
+    'border-bottom-color',
+    'border-left-color',
+    'outline-color',
+    'text-decoration-color',
+    'column-rule-color',
+    'fill',
+    'stroke',
+  ];
+
+  const multiColorProps = [
+    'box-shadow',
+    'text-shadow',
+    'filter',
+    'background-image', 
+  ];
+
+  const unsupportedRegex = /(lab|lch|oklab|oklch)\(/i;
+
+  singleColorProps.forEach((prop) => {
+    let value = style.getPropertyValue(prop);
+    if (value && unsupportedRegex.test(value)) {
+      const rgbValue = colorToRGB(value);
+      clone.style.setProperty(prop, rgbValue, 'important');
+    }
+  });
+
+  multiColorProps.forEach((prop) => {
+    let value = style.getPropertyValue(prop);
+    if (value !== 'none' && value && unsupportedRegex.test(value)) {
+      const newValue = value.replace(/(lab|lch|oklab|oklch)\([^)]*\)/gi, (match) => colorToRGB(match));
+      clone.style.setProperty(prop, newValue, 'important');
+    }
+  });
+
+  Array.from(original.children).forEach((child, index) => {
+    fixUnsupportedColors(child as HTMLElement, clone.children[index] as HTMLElement);
+  });
+}
+
+function createTempContainer(element: HTMLElement): { container: HTMLElement; cleanup: () => void } {
+  const container = document.createElement('div')
+  container.style.position = 'fixed'
+  container.style.left = '-9999px'
+  container.style.top = '0'
+  container.style.width = element.offsetWidth + 'px'
+  container.style.height = element.offsetHeight + 'px'
+  container.style.backgroundColor = '#ffffff'
+  
+  const clone = element.cloneNode(true) as HTMLElement
+  fixUnsupportedColors(element, clone)
+  container.appendChild(clone)
+  document.body.appendChild(container)
+  
+  return {
+    container: clone,
+    cleanup: () => {
+      document.body.removeChild(container)
+    },
+  }
+}
+
+
+
+/**
+ * @param element - The HTML element to convert to PDF
+ * @param fileName - Base name for the file (without extension)
+ * @returns Promise with success status and any error
+ */
+export async function downloadAsPDF(
+  element: HTMLElement,
+  fileName: string
+): Promise<ExportResult> {
+  let cleanup: (() => void) | null = null
+  
+  try {
+    ensureBrowser()
+    
+    if (!element) {
+      throw new Error('No element provided for PDF generation')
     }
 
-    // Header with name
-    sections.push(
-      new Paragraph({
-        text: resumeData.full_name,
-        heading: HeadingLevel.HEADING_1,
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 200 },
-      })
-    )
+    console.log('Generating PDF...')
 
-    // Contact information
+    const { container, cleanup: cleanupFn } = createTempContainer(element)
+    cleanup = cleanupFn
+
+    const canvas = await html2canvas(container, {
+      scale: 2, 
+      useCORS: true, 
+      logging: false, 
+      allowTaint: false, 
+      backgroundColor: '#ffffff', 
+      imageTimeout: 15000,
+      removeContainer: true,
+      
+      ignoreElements: (element) => {
+        const classList = element.classList
+        return (
+          classList.contains('no-print') ||
+          classList.contains('no-pdf') ||
+          element.hasAttribute('data-html2canvas-ignore')
+        )
+      },
+      
+      windowWidth: container.offsetWidth,
+      windowHeight: container.offsetHeight,
+      
+      foreignObjectRendering: false, 
+    })
+
+    if (cleanup) {
+      cleanup()
+      cleanup = null
+    }
+
+    const imgWidth = 210
+    const pageHeight = 297 
+    const imgHeight = (canvas.height * imgWidth) / canvas.width
+    
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true, 
+    })
+
+    let heightLeft = imgHeight
+    let position = 0
+
+    const imgData = canvas.toDataURL('image/png', 1.0)
+    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+    heightLeft -= pageHeight
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight
+      pdf.addPage()
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+    }
+
+    const safeFileName = sanitizeFileName(fileName)
+    pdf.save(`${safeFileName}_resume.pdf`)
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error generating PDF:', error)
+    
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    
+    return {
+      success: false,
+      error: {
+        message: 'Failed to generate PDF. Please try again.',
+        code: 'PDF_GENERATION_ERROR',
+        details: errorMessage,
+      },
+    }
+  } finally {
+    
+    if (cleanup) {
+      cleanup()
+    }
+  }
+}
+
+
+
+/**
+ * Download resume as DOCX using docx library
+ * @param resumeData - The resume data object
+ * @returns Promise with success status and any error
+ */
+export async function downloadAsDocx(resumeData: any): Promise<ExportResult> {
+  try {
+    ensureBrowser()
+
+    if (!resumeData) {
+      throw new Error('No resume data provided')
+    }
+
+    const sections: any[] = []
+
+    // Header with name
+    if (resumeData.full_name) {
+      sections.push(
+        new Paragraph({
+          text: resumeData.full_name,
+          heading: HeadingLevel.HEADING_1,
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 200 },
+        })
+      )
+    }
+
     const contactInfo = [
       resumeData.email,
       resumeData.phone,
@@ -79,15 +273,16 @@ export async function downloadAsDocx(resumeData: any) {
       resumeData.website,
     ].filter(Boolean).join(' | ')
 
-    sections.push(
-      new Paragraph({
-        text: contactInfo,
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 300 },
-      })
-    )
+    if (contactInfo) {
+      sections.push(
+        new Paragraph({
+          text: contactInfo,
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 300 },
+        })
+      )
+    }
 
-    // Professional Summary
     if (resumeData.summary) {
       sections.push(
         new Paragraph({
@@ -110,7 +305,6 @@ export async function downloadAsDocx(resumeData: any) {
       )
     }
 
-    // Work Experience
     if (resumeData.experience && resumeData.experience.length > 0) {
       sections.push(
         new Paragraph({
@@ -135,7 +329,7 @@ export async function downloadAsDocx(resumeData: any) {
           new Paragraph({
             children: [
               new TextRun({
-                text: exp.position,
+                text: exp.position || 'Position',
                 bold: true,
                 size: 24,
               }),
@@ -159,14 +353,13 @@ export async function downloadAsDocx(resumeData: any) {
             ],
           }),
           new Paragraph({
-            text: exp.description,
+            text: exp.description || '',
             spacing: { after: 150 },
           })
         )
       })
     }
 
-    // Education
     if (resumeData.education && resumeData.education.length > 0) {
       sections.push(
         new Paragraph({
@@ -191,7 +384,7 @@ export async function downloadAsDocx(resumeData: any) {
           new Paragraph({
             children: [
               new TextRun({
-                text: `${edu.degree} in ${edu.field}`,
+                text: `${edu.degree || 'Degree'} in ${edu.field || 'Field'}`,
                 bold: true,
               }),
             ],
@@ -207,30 +400,32 @@ export async function downloadAsDocx(resumeData: any) {
       })
     }
 
-    // Skills
     if (resumeData.skills && resumeData.skills.length > 0 && resumeData.skills[0]) {
-      sections.push(
-        new Paragraph({
-          text: 'SKILLS',
-          heading: HeadingLevel.HEADING_2,
-          spacing: { before: 200, after: 100 },
-          border: {
-            bottom: {
-              color: '2563EB',
-              space: 1,
-              style: BorderStyle.SINGLE,
-              size: 6,
+      const validSkills = resumeData.skills.filter((s: string) => s && s.trim())
+      
+      if (validSkills.length > 0) {
+        sections.push(
+          new Paragraph({
+            text: 'SKILLS',
+            heading: HeadingLevel.HEADING_2,
+            spacing: { before: 200, after: 100 },
+            border: {
+              bottom: {
+                color: '2563EB',
+                space: 1,
+                style: BorderStyle.SINGLE,
+                size: 6,
+              },
             },
-          },
-        }),
-        new Paragraph({
-          text: resumeData.skills.filter((s: string) => s.trim()).join(' • '),
-          spacing: { after: 200 },
-        })
-      )
+          }),
+          new Paragraph({
+            text: validSkills.join(' • '),
+            spacing: { after: 200 },
+          })
+        )
+      }
     }
 
-    // Certifications
     if (resumeData.certifications && resumeData.certifications.length > 0) {
       sections.push(
         new Paragraph({
@@ -261,14 +456,13 @@ export async function downloadAsDocx(resumeData: any) {
             ],
           }),
           new Paragraph({
-            text: `${cert.issuer} - ${formatDate(cert.date)}`,
+            text: `${cert.issuer || 'Issuer'} - ${formatDate(cert.date)}`,
             spacing: { after: 100 },
           })
         )
       })
     }
 
-    // Create document
     const doc = new Document({
       sections: [
         {
@@ -278,42 +472,112 @@ export async function downloadAsDocx(resumeData: any) {
       ],
     })
 
-    // Generate and download
     const blob = await Packer.toBlob(doc)
-    saveAs(blob, `${resumeData.full_name}_Resume.docx`)
+    const safeFileName = sanitizeFileName(resumeData.full_name || 'resume')
+    saveAs(blob, `${safeFileName}_resume.docx`)
+
+    return { success: true }
   } catch (error) {
     console.error('Error generating DOCX:', error)
-    alert('Failed to generate Word document')
+    
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    
+    return {
+      success: false,
+      error: {
+        message: 'Failed to generate Word document. Please try again.',
+        code: 'DOCX_GENERATION_ERROR',
+        details: errorMessage,
+      },
+    }
   }
 }
 
-// ============================================
-// EMAIL FUNCTION
-// ============================================
+/**
+ * Send resume via email
+ * @param recipientEmail - Email address to send to
+ * @param resumeData - Resume data object
+ * @param element - HTML element to convert to PDF
+ * @returns Promise with success status and any error
+ */
 export async function sendEmail(
   recipientEmail: string,
   resumeData: any,
   element: HTMLElement
-): Promise<boolean> {
+): Promise<ExportResult> {
+  let cleanup: (() => void) | null = null
+  
   try {
-    // First, convert resume to PDF
-    const canvas = await html2canvas(element, {
+    ensureBrowser()
+
+    if (!recipientEmail || !recipientEmail.includes('@')) {
+      throw new Error('Invalid email address')
+    }
+
+    if (!element) {
+      throw new Error('No element provided for PDF generation')
+    }
+
+    console.log('Generating PDF for email...')
+
+    const { container, cleanup: cleanupFn } = createTempContainer(element)
+    cleanup = cleanupFn
+
+    const canvas = await html2canvas(container, {
       scale: 2,
       useCORS: true,
       logging: false,
+      backgroundColor: '#ffffff',
+      allowTaint: false,
+      imageTimeout: 15000,
+      removeContainer: true,
+      ignoreElements: (element) => {
+        const classList = element.classList
+        return (
+          classList.contains('no-print') ||
+          classList.contains('no-pdf') ||
+          element.hasAttribute('data-html2canvas-ignore')
+        )
+      },
+      windowWidth: container.offsetWidth,
+      windowHeight: container.offsetHeight,
+      foreignObjectRendering: false,
     })
+
+    if (cleanup) {
+      cleanup()
+      cleanup = null
+    }
 
     const imgWidth = 210
     const pageHeight = 297
     const imgHeight = (canvas.height * imgWidth) / canvas.width
 
-    const pdf = new jsPDF('p', 'mm', 'a4')
-    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, imgWidth, imgHeight)
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true,
+    })
 
-    // Convert PDF to base64
+    const imgData = canvas.toDataURL('image/png', 1.0)
+    let heightLeft = imgHeight
+    let position = 0
+
+    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+    heightLeft -= pageHeight
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight
+      pdf.addPage()
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+    }
+
     const pdfBase64 = pdf.output('dataurlstring').split(',')[1]
 
-    // Send email using your backend API
+    console.log('Sending email...')
+
     const response = await fetch('/api/send-email', {
       method: 'POST',
       headers: {
@@ -321,16 +585,125 @@ export async function sendEmail(
       },
       body: JSON.stringify({
         to: recipientEmail,
-        subject: `Resume - ${resumeData.full_name}`,
-        text: `Please find attached the resume for ${resumeData.full_name}.`,
+        subject: `Resume - ${resumeData.full_name || 'Applicant'}`,
+        text: `Please find attached the resume for ${resumeData.full_name || 'the applicant'}.`,
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2>Resume for ${resumeData.full_name || 'Applicant'}</h2>
+            <p>Please find the attached resume.</p>
+            ${resumeData.email ? `<p>Contact: <a href="mailto:${resumeData.email}">${resumeData.email}</a></p>` : ''}
+            ${resumeData.phone ? `<p>Phone: ${resumeData.phone}</p>` : ''}
+          </div>
+        `,
         pdfBase64: pdfBase64,
-        fileName: `${resumeData.full_name}_Resume.pdf`,
+        fileName: `${sanitizeFileName(resumeData.full_name || 'resume')}_resume.pdf`,
       }),
     })
 
-    return response.ok
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.error || 'Failed to send email')
+    }
+
+    return { success: true }
   } catch (error) {
     console.error('Error sending email:', error)
-    return false
+    
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    
+    return {
+      success: false,
+      error: {
+        message: 'Failed to send email. Please try again.',
+        code: 'EMAIL_SEND_ERROR',
+        details: errorMessage,
+      },
+    }
+  } finally {
+    if (cleanup) {
+      cleanup()
+    }
+  }
+}
+
+/**
+ * Convert HTML element to PDF blob (useful for further processing)
+ * @param element - HTML element to convert
+ * @returns Promise with PDF blob or error
+ */
+export async function elementToPdfBlob(element: HTMLElement): Promise<ExportResult<Blob>> {
+  let cleanup: (() => void) | null = null
+  
+  try {
+    ensureBrowser()
+
+    const { container, cleanup: cleanupFn } = createTempContainer(element)
+    cleanup = cleanupFn
+
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+      ignoreElements: (element) => {
+        const classList = element.classList
+        return (
+          classList.contains('no-print') ||
+          classList.contains('no-pdf') ||
+          element.hasAttribute('data-html2canvas-ignore')
+        )
+      },
+      windowWidth: container.offsetWidth,
+      windowHeight: container.offsetHeight,
+      foreignObjectRendering: false,
+    })
+
+    if (cleanup) {
+      cleanup()
+      cleanup = null
+    }
+
+    const imgWidth = 210
+    const pageHeight = 297
+    const imgHeight = (canvas.height * imgWidth) / canvas.width
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true,
+    })
+
+    const imgData = canvas.toDataURL('image/png', 1.0)
+    pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
+
+    let heightLeft = imgHeight - pageHeight
+    let position = 0
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight
+      pdf.addPage()
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+    }
+
+    const blob = pdf.output('blob')
+    
+    return { success: true, data: blob }
+  } catch (error) {
+    console.error('Error creating PDF blob:', error)
+    
+    return {
+      success: false,
+      error: {
+        message: 'Failed to create PDF',
+        code: 'PDF_BLOB_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+    }
+  } finally {
+    if (cleanup) {
+      cleanup()
+    }
   }
 }

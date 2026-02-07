@@ -32,7 +32,6 @@ type Props = {
 }
 
 export default function ResumeTemplate({ data }: Props) {
-  // Format date from YYYY-MM to "Month YYYY"
   const formatDate = (dateStr: string) => {
     if (!dateStr) return 'Present'
     const [year, month] = dateStr.split('-')
@@ -43,7 +42,6 @@ export default function ResumeTemplate({ data }: Props) {
 
   return (
     <div className="p-12 bg-white text-gray-900" style={{ fontFamily: 'Arial, sans-serif' }}>
-      {/* Header Section */}
       <header className="text-center border-b-4 border-blue-600 pb-6 mb-6">
         <h1 className="text-4xl font-bold text-gray-900 mb-2">
           {data.full_name}
@@ -98,7 +96,6 @@ export default function ResumeTemplate({ data }: Props) {
         </div>
       </header>
 
-      {/* Professional Summary */}
       {data.summary && (
         <section className="mb-6">
           <h2 className="text-xl font-bold text-blue-600 border-b-2 border-gray-300 pb-2 mb-3">
@@ -108,7 +105,6 @@ export default function ResumeTemplate({ data }: Props) {
         </section>
       )}
 
-      {/* Work Experience */}
       {data.experience && data.experience.length > 0 && data.experience[0] && data.experience[0].company && (
         <section className="mb-6">
           <h2 className="text-xl font-bold text-blue-600 border-b-2 border-gray-300 pb-2 mb-3">
@@ -134,7 +130,6 @@ export default function ResumeTemplate({ data }: Props) {
         </section>
       )}
 
-      {/* Education */}
       {data.education && data.education.length > 0 && data.education[0] && data.education[0].school && (
         <section className="mb-6">
           <h2 className="text-xl font-bold text-blue-600 border-b-2 border-gray-300 pb-2 mb-3">
@@ -157,7 +152,6 @@ export default function ResumeTemplate({ data }: Props) {
         </section>
       )}
 
-      {/* Skills */}
       {data.skills && data.skills.length > 0 && data.skills[0] && (
         <section className="mb-6">
           <h2 className="text-xl font-bold text-blue-600 border-b-2 border-gray-300 pb-2 mb-3">
@@ -176,7 +170,6 @@ export default function ResumeTemplate({ data }: Props) {
         </section>
       )}
 
-      {/* Certifications */}
       {data.certifications && data.certifications.length > 0 && data.certifications[0] && data.certifications[0].name && (
         <section className="mb-6">
           <h2 className="text-xl font-bold text-blue-600 border-b-2 border-gray-300 pb-2 mb-3">

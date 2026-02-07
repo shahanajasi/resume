@@ -1,44 +1,109 @@
+import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
-import { NextResponse } from 'next/server'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-export async function POST(request: Request) {
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+export async function POST(request: NextRequest) {
   try {
-    const { to, subject, text, pdfBase64, fileName } = await request.json()
+    const body = await request.json()
+    const { to, subject, text, html, pdfBase64, fileName } = body
 
-    // Convert base64 to buffer
-    const pdfBuffer = Buffer.from(pdfBase64, 'base64')
+    if (!to || !EMAIL_REGEX.test(to)) {
+      return NextResponse.json(
+        { error: 'Invalid recipient email address' },
+        { status: 400 }
+      )
+    }
 
-    // Send email with attachment
-    const data = await resend.emails.send({
-      from: 'Resume Creator <onboarding@resend.dev>', // Use your verified domain
+    if (!subject || !text) {
+      return NextResponse.json(
+        { error: 'Subject and text are required' },
+        { status: 400 }
+      )
+    }
+
+    if (!pdfBase64 || !fileName) {
+      return NextResponse.json(
+        { error: 'PDF attachment is required' },
+        { status: 400 }
+      )
+    }
+
+    if (!process.env.RESEND_API_KEY) {
+      console.error('RESEND_API_KEY is not configured')
+      return NextResponse.json(
+        { error: 'Email service is not configured' },
+        { status: 500 }
+      )
+    }
+
+    const { data, error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
       to: [to],
       subject: subject,
       text: text,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #2563EB;">Resume Attached</h2>
-          <p>${text}</p>
-          <p style="color: #666; font-size: 14px; margin-top: 30px;">
-            This email was sent from Resume Creator.
-          </p>
-        </div>
-      `,
+      html: html || text,
       attachments: [
         {
           filename: fileName,
-          content: pdfBuffer,
+          content: pdfBase64,
         },
       ],
     })
 
-    return NextResponse.json({ success: true, data })
-  } catch (error) {
-    console.error('Email error:', error)
+    if (error) {
+      console.error('Resend API error:', error)
+      return NextResponse.json(
+        { 
+          error: error.message || 'Failed to send email',
+          details: error 
+        },
+        { status: 500 }
+      )
+    }
+
+    if (!data) {
+      return NextResponse.json(
+        { error: 'No response data from email service' },
+        { status: 500 }
+      )
+    }
+
     return NextResponse.json(
-      { success: false, error: 'Failed to send email' },
+      {
+        success: true,
+        messageId: data.id,
+      },
+      { status: 200 }
+    )
+  } catch (error) {
+    console.error('Error sending email:', error)
+
+    if (error instanceof Error) {
+      return NextResponse.json(
+        { 
+          error: error.message,
+          type: error.name 
+        },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json(
+      { error: 'Failed to send email' },
       { status: 500 }
     )
   }
+}
+
+export async function GET() {
+  const isConfigured = !!process.env.RESEND_API_KEY
+
+  return NextResponse.json({
+    configured: isConfigured,
+    message: isConfigured
+      ? 'Email service is configured'
+      : 'Email service requires RESEND_API_KEY environment variable',
+  })
 }

@@ -21,15 +21,13 @@ export default function Dashboard() {
     loadResumes()
   }, [])
 
-  // Check if user is logged in
   const checkUser = async () => {
     const { data } = await supabase.auth.getUser()
     if (!data.user) {
-      router.push('/') // Send back to login if not logged in
+      router.push('/') 
     }
   }
 
-  // Load all resumes from database
   const loadResumes = async () => {
     const { data, error } = await supabase
       .from('resumes')
@@ -50,7 +48,6 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">My Resumes</h1>
           <button
@@ -61,7 +58,6 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* Create New Button */}
         <Link
           href="/resume/new"
           className="inline-block mb-8 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -69,7 +65,6 @@ export default function Dashboard() {
           + Create New Resume
         </Link>
 
-        {/* Resume Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {resumes.map((resume) => (
             <Link
